@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -69,9 +70,12 @@ func (s *Gredis) handleConnection(c net.Conn) {
 
 	for {
 		//read data into buffer
-		c.Read(buffer)
+		n, err := c.Read(buffer)
+		if err != nil {
+			break
+		}
 
-		protocol, err := parseCommand(buffer, s.db)
+		protocol, err := parseCommand(buffer[:n], s.db)
 
 		if err != nil {
 			c.Write([]byte(err.Error()))
@@ -89,12 +93,16 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 
 	parts := strings.Split(protocol, " ")
 
+	fmt.Printf("values: %v", len(parts))
+
 	if len(parts) < 2 {
 		return "", errors.New("Invalid command try [GET KEY | SET KEY VALUE]")
 	}
 
 	action := parts[0]
-	key := parts[1]
+	key := strings.TrimSuffix(parts[1], "\n")
+
+	fmt.Println(strconv.Quote(parts[1]))
 
 	switch action {
 	case "GET":
@@ -106,7 +114,7 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 
 		return value, nil
 	case "SET":
-		value := parts[2]
+		value := strings.TrimSuffix(parts[2], "\n")
 		//SET KEY
 		db.Set(key, value)
 		return "SET command works hi form gredis", nil
