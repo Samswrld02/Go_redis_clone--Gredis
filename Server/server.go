@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 )
 
 type Gredis struct {
@@ -15,6 +16,7 @@ type Gredis struct {
 	port        string
 	addres      string
 	db          *db.Db
+	mu          sync.Mutex
 }
 
 func NewGredis(port string) *Gredis {
@@ -28,6 +30,9 @@ func (s *Gredis) Serve() {
 	if err != nil {
 		fmt.Printf("listner not set due to erro: %v", err)
 	}
+
+	//print ascii for server
+	s.printASCII()
 
 	for {
 		//await connection
@@ -46,16 +51,18 @@ func (s *Gredis) Serve() {
 func (s *Gredis) handleConnection(c net.Conn) {
 	c.Write([]byte("Connection established user\n"))
 
-	//increment usercount aka id for each connection
-	s.userCount += 1
+	// s.mu.Lock()
+	// //increment usercount aka id for each connection
+	// s.userCount += 1
 
-	//make new client instance
-	client := client.NewClient(s.userCount, &c)
+	// //make new client instance
+	// client := client.NewClient(s.userCount, &c)
 
-	//store client in server map
-	s.connections[s.userCount] = client
+	// //store client in server map
+	// s.connections[s.userCount] = client
+	// s.mu.Unlock()
 
-	fmt.Printf("users, %v", s.connections)
+	// fmt.Printf("users, %v", s.connections)
 
 	//buffer
 	buffer := make([]byte, 4000)
@@ -107,4 +114,25 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 		return "Choose command SET OR GET", nil
 	}
 
+}
+
+func (s *Gredis) printASCII() {
+	fmt.Printf(`  _________                                               .__  .__             ._.
+ /   _____/ ______________  __ ___________    ____   ____ |  | |__| ____   ____| |
+ \_____  \_/ __ \_  __ \  \/ // __ \_  __ \  /  _ \ /    \|  | |  |/    \_/ __ \ |
+ /        \  ___/|  | \/\   /\  ___/|  | \/ (  <_> )   |  \  |_|  |   |  \  ___/\|
+/_______  /\___  >__|    \_/  \___  >__|     \____/|___|  /____/__|___|  /\___  >_
+        \/     \/                 \/                    \/             \/     \/\/
+          __________           _________                                          
+          \______   \___.__.  /   _____/____    _____                             
+           |    |  _<   |  |  \_____  \\__  \  /     \                            
+           |    |   \\___  |  /        \/ __ \|  Y Y  \                           
+           |______  // ____| /_______  (____  /__|_|  /                           
+                  \/ \/              \/     \/      \/                            
+                                                                                  
+                                                                                  
+                                                                                  
+                                                                                  
+                                                                                  
+                                                                                  `)
 }
