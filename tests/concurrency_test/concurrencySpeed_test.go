@@ -1,14 +1,18 @@
 package concurrency_test
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"testing"
 )
 
 func TestConcurrency(t *testing.T) {
+
+	fmt.Println("Concurrency test busy..")
+
 	//make channel
-	request := 10000
+	request := 5000
 	errChan := make(chan error, request)
 
 	port := ":6379"
@@ -17,33 +21,36 @@ func TestConcurrency(t *testing.T) {
 	//make waitgroup to wait for all routines to finish
 	var wg sync.WaitGroup
 
-	//create loop for concurrent requests
-	for i := 0; i < request; i++ {
+	//make concurrent request
+	for range request {
+
 		wg.Add(1)
-		//run anonymous function concurrently
+
 		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
+			//connect to gredis
 			conn, err := net.Dial(network, port)
-
 			if err != nil {
-				errChan <- err
+				//write to errorchannel
+				errChan <- fmt.Errorf("connection error %v", err)
 				return
 			}
 
-			defer conn.Close()
+			defer wg.Done()
 
-			_, err = conn.Write([]byte("SET SAM 1\n"))
+			//send command
+			_, err = conn.Write([]byte("get SAM 1\n"))
+
 			if err != nil {
-				errChan <- err
-				return
+				errChan <- fmt.Errorf("something went wrong %v", err)
 			}
-
 		}(&wg)
 	}
 
+	//wait for threads to finish
 	wg.Wait()
-	close(errChan)
 
+	//close channel to loop over it
+	close(errChan)
 	for err := range errChan {
 		if err != nil {
 			t.Errorf("concurrent request failed %v", err)

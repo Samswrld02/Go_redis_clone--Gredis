@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -82,8 +81,6 @@ func (s *Gredis) handleConnection(c net.Conn) {
 		}
 
 		c.Write([]byte(protocol + "\n"))
-
-		fmt.Println("still going on")
 	}
 
 }
@@ -93,16 +90,12 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 
 	parts := strings.Split(protocol, " ")
 
-	fmt.Printf("values: %v", len(parts))
-
 	if len(parts) < 2 {
 		return "", errors.New("Invalid command try [GET KEY | SET KEY VALUE]")
 	}
 
 	action := parts[0]
 	key := strings.TrimSuffix(parts[1], "\n")
-
-	fmt.Println(strconv.Quote(parts[1]))
 
 	switch action {
 	case "GET":
