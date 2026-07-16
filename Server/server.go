@@ -51,19 +51,6 @@ func (s *Gredis) Serve() {
 func (s *Gredis) handleConnection(c net.Conn) {
 	c.Write([]byte("Connection established user\n"))
 
-	// s.mu.Lock()
-	// //increment usercount aka id for each connection
-	// s.userCount += 1
-
-	// //make new client instance
-	// client := client.NewClient(s.userCount, &c)
-
-	// //store client in server map
-	// s.connections[s.userCount] = client
-	// s.mu.Unlock()
-
-	// fmt.Printf("users, %v", s.connections)
-
 	//buffer
 	buffer := make([]byte, 4000)
 
