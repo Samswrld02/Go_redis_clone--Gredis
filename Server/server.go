@@ -25,6 +25,7 @@ func NewGredis(port string) *Gredis {
 
 // start Gredis server
 func (s *Gredis) Serve() {
+
 	ln, err := net.Listen("tcp", s.port)
 
 	if err != nil {
@@ -45,6 +46,7 @@ func (s *Gredis) Serve() {
 		//handle connection concurrently
 		go s.handleConnection(conn)
 	}
+
 }
 
 // handle individual connection
