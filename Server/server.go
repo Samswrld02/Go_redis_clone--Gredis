@@ -3,8 +3,10 @@ package Server
 import (
 	client "Gredis/Client"
 	"Gredis/Server/db"
+	"bufio"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -138,31 +140,23 @@ func (s *Gredis) printASCII() {
 
 // read from aof file to restore data after crash or restart
 func (s *Gredis) restore() {
-
-	//buffer
-	buff := make([]byte, 300)
 	f, err := os.Open("aof.txt")
 
 	if err != nil {
-		fmt.Println("restoring data went wrong")
+		fmt.Println("reading file backup failed went wrong")
+		return
 	}
 
-	n, _ := f.Read(buff)
+	defer f.Close()
 
-	fmt.Printf("%v", string(buff[:n]))
+	scanner := bufio.NewScanner(f)
 
-	start := 0
-	for num, value := range buff[:n] {
-		if value == '\n' {
-			conn, _ := net.Dial("tcp", ":6379")
-			conn.Write(buff[start : num+1])
-
-			//get the enter for the send
-			fmt.Println("test:", string(buff[start:num+1]))
-
-			//get rid of enter for next iteration
-			start = num + 1
-		}
+	for scanner.Scan() {
+		line := strings.SplitN(scanner.Text(), " ", 3)
+		s.db.Set(line[1], line[2])
 	}
 
+	if err := scanner.Err(); err != nil {
+		log.Fatal("error reading from backup file")
+	}
 }
