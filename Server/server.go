@@ -153,7 +153,21 @@ func (s *Gredis) restore() {
 
 	for scanner.Scan() {
 		line := strings.SplitN(scanner.Text(), " ", 3)
-		s.db.Set(line[1], line[2])
+
+		switch line[0] {
+		case "SET":
+			//skip incomplete commmand
+			if len(line) < 3 {
+				continue
+			}
+			s.db.Set(line[1], line[2])
+		case "DEL":
+			if len(line) < 2 {
+				continue
+			}
+			//delete logic
+		}
+
 	}
 
 	if err := scanner.Err(); err != nil {
