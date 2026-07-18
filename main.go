@@ -1,7 +1,7 @@
 package main
 
 import (
-	server "Gredis/Server"
+	server "Gredis/server"
 	"fmt"
 	"os"
 	"os/signal"

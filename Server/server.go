@@ -1,4 +1,4 @@
-package Server
+package server
 
 import (
 	client "Gredis/Client"
