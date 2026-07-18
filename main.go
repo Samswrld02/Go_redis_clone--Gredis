@@ -15,6 +15,8 @@ func main() {
 	//create new Gredis/server instance
 	Gredis := server.NewGredis(":6379")
 
+	Gredis.CreateChannel("welcome")
+
 	//start Gredis server
 	go Gredis.Serve()
 

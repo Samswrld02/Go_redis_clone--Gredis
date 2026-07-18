@@ -2,7 +2,8 @@ package server
 
 import (
 	client "Gredis/Client"
-	"Gredis/Server/db"
+	"Gredis/channel"
+	"Gredis/server/db"
 	"bufio"
 	"errors"
 	"fmt"
@@ -14,16 +15,16 @@ import (
 )
 
 type Gredis struct {
-	userCount   int
-	connections map[int]*client.Client
-	port        string
-	addres      string
-	db          *db.Db
-	mu          sync.Mutex
+	clients  map[int]*client.Client
+	port     string
+	addres   string
+	db       *db.Db
+	mu       sync.Mutex
+	channels map[string]*channel.Channel
 }
 
 func NewGredis(port string) *Gredis {
-	return &Gredis{connections: make(map[int]*client.Client), port: port, db: db.NewGredisDb()}
+	return &Gredis{clients: make(map[int]*client.Client), port: port, db: db.NewGredisDb(), channels: make(map[string]*channel.Channel)}
 }
 
 // start Gredis server
@@ -31,16 +32,18 @@ func (s *Gredis) Serve() {
 
 	ln, err := net.Listen("tcp", s.port)
 
-	s.restore()
-
 	if err != nil {
-		fmt.Printf("listner not set due to erro: %v", err)
+		fmt.Printf("listner not set due to error: %v.\nPress ctr + c to exit\n", err)
+		return
 	}
+
+	//restore db data if available
+	s.restore()
 
 	//print ascii for server
 	s.printASCII()
 
-	//start aof worker
+	//start aof worker, tracking of commands
 	go s.db.StartAofWorker()
 
 	for {
@@ -49,6 +52,7 @@ func (s *Gredis) Serve() {
 
 		if err != nil {
 			fmt.Printf("connection not possible %v", err)
+			continue
 		}
 
 		//handle connection concurrently
@@ -59,21 +63,27 @@ func (s *Gredis) Serve() {
 
 // handle individual connection
 func (s *Gredis) handleConnection(c net.Conn) {
-	c.Write([]byte("Connection established user\n"))
 
-	//buffer
-	buffer := make([]byte, 4000)
+	defer c.Close()
+
+	//register client
+	client := s.registerClient(c)
+
+	go client.SendMessage()
+
+	read := bufio.NewReader(client.Connection)
+
+	client.Connection.Write([]byte(fmt.Sprintf("user %d: connected\n", client.Id)))
 
 	for {
-		//read data into buffer
-		n, err := c.Read(buffer)
+		cmd, err := read.ReadBytes('\n')
 		if err != nil {
-			break
+			//remove connection
+			s.removeClient(client.Id)
+			return
 		}
 
-		// go parseCommand(buffer[:n], s.db)
-
-		protocol, err := parseCommand(buffer[:n], s.db)
+		protocol, err := s.parseCommand(cmd, client.Id)
 
 		if err != nil {
 			c.Write([]byte(err.Error()))
@@ -84,8 +94,31 @@ func (s *Gredis) handleConnection(c net.Conn) {
 
 }
 
-func parseCommand(b []byte, db *db.Db) (string, error) {
-	protocol := strings.ToUpper(string(b))
+func (s *Gredis) removeClient(clientId int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.clients, clientId)
+}
+
+func (s *Gredis) registerClient(c net.Conn) *client.Client {
+	//make client
+	client := client.NewClient(c)
+
+	//register client
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clients[client.Id] = client
+
+	return s.clients[client.Id]
+}
+
+func (s *Gredis) respond() {
+
+}
+
+// server parser for incomming commands via tcp socket
+func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
+	protocol := string(b)
 
 	parts := strings.SplitN(protocol, " ", 3)
 
@@ -93,25 +126,49 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 		return "", errors.New("Invalid command try [GET KEY | SET KEY VALUE]")
 	}
 
-	action := parts[0]
+	//make command uppercase
+	action := strings.ToUpper(parts[0])
+
+	//trim key of enter character
 	key := strings.TrimSuffix(parts[1], "\n")
 
 	switch action {
 	case "GET":
 		//GET KEY
-		value, err := db.Get(key)
+		value, err := s.db.Get(key)
 		if err != nil {
 			return "", err
 		}
-
 		return value, nil
 	case "SET":
 		//write command to worker for backup
-		db.CmdCh <- protocol
+		s.db.CmdCh <- protocol
 		value := strings.TrimSuffix(parts[2], "\n")
 		//SET KEY
-		db.Set(key, value)
+		s.db.Set(key, value)
 		return "SET command works hi form gredis", nil
+	case "SUBSCRIBE":
+		//pass in channel name and client pointer
+		_, err := s.handleSubscription(key, s.clients[clientId])
+
+		if err != nil {
+			return "Couldn't connect to channel ", err
+		}
+
+		return "Connected to channel", nil
+	case "PUBLISH":
+		value := strings.TrimSuffix(parts[2], "\n")
+		//broadcast everything send to the channel's channel
+		_, err := s.handleBroadcast(key, value)
+
+		if err != nil {
+			return "", fmt.Errorf("failed, %v", err)
+		}
+
+		// fmt.Println(<-s.clients[clientId].Mess)
+
+		return "broadcast succesful", nil
+
 	default:
 		return "Choose command SET OR GET", nil
 	}
@@ -138,8 +195,41 @@ func (s *Gredis) printASCII() {
                                                                                   `)
 }
 
+// create channel
+func (s *Gredis) CreateChannel(channelName string) {
+	s.channels[channelName] = channel.NewChannel(channelName)
+}
+
+// handle subscription to channel
+func (s *Gredis) handleSubscription(channel string, client *client.Client) (bool, error) {
+	//check if channel exists
+	if _, exists := s.channels[channel]; !exists {
+		return false, errors.New("channel doesn't exist")
+	}
+
+	//register client to channel
+	s.channels[channel].Subscribed = append(s.channels[channel].Subscribed, client)
+
+	return true, nil
+}
+
+func (s *Gredis) handleBroadcast(channelName string, value string) (bool, error) {
+	//check if channel exists
+	if _, exists := s.channels[channelName]; !exists {
+		return false, errors.New("channel doesn't exist")
+	}
+
+	//push message into channels channel
+	s.channels[channelName].Ch <- value
+
+	s.channels[channelName].BroadcastWorker()
+	return true, nil
+}
+
 // read from aof file to restore data after crash or restart
 func (s *Gredis) restore() {
+
+	fmt.Println("function works")
 	f, err := os.Open("aof.txt")
 
 	if err != nil {
@@ -154,7 +244,7 @@ func (s *Gredis) restore() {
 	for scanner.Scan() {
 		line := strings.SplitN(scanner.Text(), " ", 3)
 
-		switch line[0] {
+		switch strings.ToUpper(line[0]) {
 		case "SET":
 			//skip incomplete commmand
 			if len(line) < 3 {
@@ -167,7 +257,6 @@ func (s *Gredis) restore() {
 			}
 			//delete logic
 		}
-
 	}
 
 	if err := scanner.Err(); err != nil {
