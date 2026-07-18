@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 )
@@ -28,12 +29,17 @@ func (s *Gredis) Serve() {
 
 	ln, err := net.Listen("tcp", s.port)
 
+	s.restore()
+
 	if err != nil {
 		fmt.Printf("listner not set due to erro: %v", err)
 	}
 
 	//print ascii for server
 	s.printASCII()
+
+	//start aof worker
+	go s.db.StartAofWorker()
 
 	for {
 		//await connection
@@ -63,6 +69,8 @@ func (s *Gredis) handleConnection(c net.Conn) {
 			break
 		}
 
+		// go parseCommand(buffer[:n], s.db)
+
 		protocol, err := parseCommand(buffer[:n], s.db)
 
 		if err != nil {
@@ -77,7 +85,7 @@ func (s *Gredis) handleConnection(c net.Conn) {
 func parseCommand(b []byte, db *db.Db) (string, error) {
 	protocol := strings.ToUpper(string(b))
 
-	parts := strings.Split(protocol, " ")
+	parts := strings.SplitN(protocol, " ", 3)
 
 	if len(parts) < 2 {
 		return "", errors.New("Invalid command try [GET KEY | SET KEY VALUE]")
@@ -96,6 +104,8 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 
 		return value, nil
 	case "SET":
+		//write command to worker for backup
+		db.CmdCh <- protocol
 		value := strings.TrimSuffix(parts[2], "\n")
 		//SET KEY
 		db.Set(key, value)
@@ -103,7 +113,6 @@ func parseCommand(b []byte, db *db.Db) (string, error) {
 	default:
 		return "Choose command SET OR GET", nil
 	}
-
 }
 
 func (s *Gredis) printASCII() {
@@ -125,4 +134,35 @@ func (s *Gredis) printASCII() {
                                                                                   
                                                                                   
                                                                                   `)
+}
+
+// read from aof file to restore data after crash or restart
+func (s *Gredis) restore() {
+
+	//buffer
+	buff := make([]byte, 300)
+	f, err := os.Open("aof.txt")
+
+	if err != nil {
+		fmt.Println("restoring data went wrong")
+	}
+
+	n, _ := f.Read(buff)
+
+	fmt.Printf("%v", string(buff[:n]))
+
+	start := 0
+	for num, value := range buff[:n] {
+		if value == '\n' {
+			conn, _ := net.Dial("tcp", ":6379")
+			conn.Write(buff[start : num+1])
+
+			//get the enter for the send
+			fmt.Println("test:", string(buff[start:num+1]))
+
+			//get rid of enter for next iteration
+			start = num + 1
+		}
+	}
+
 }
