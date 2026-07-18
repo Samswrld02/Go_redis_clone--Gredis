@@ -20,7 +20,6 @@ func NewGredisDb() *Db {
 
 // Set db data
 func (db *Db) Set(key string, value string) (bool, error) {
-
 	db.mu.Lock()
 	db.data[key] = value
 	db.mu.Unlock()
@@ -40,15 +39,17 @@ func (db *Db) Get(key string) (string, error) {
 
 // aof worker
 func (db *Db) StartAofWorker() {
+	f, err := os.OpenFile("aof.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+
+	if err != nil {
+		fmt.Println("something went wrong with aof file")
+	}
+
+	defer f.Close()
+
 	//read from queue of commands to handle
 	for command := range db.CmdCh {
 		fmt.Println("Queue has ", command)
-
-		f, err := os.OpenFile("aof.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-
-		if err != nil {
-			fmt.Println("something went wrong with aof file")
-		}
 
 		_, err = f.Write([]byte(command))
 
