@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"net"
 	"sync"
 )
@@ -46,6 +47,6 @@ func NewClient(c net.Conn) *Client {
 func (c *Client) writerWorker() {
 
 	for value := range c.Mess {
-		c.Connection.Write([]byte(value))
+		c.Connection.Write([]byte(fmt.Sprintf("%s\n", value)))
 	}
 }

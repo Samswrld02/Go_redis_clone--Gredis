@@ -24,7 +24,15 @@ type Gredis struct {
 }
 
 func NewGredis(port string) *Gredis {
-	return &Gredis{clients: make(map[int]*client.Client), port: port, db: db.NewGredisDb(), channels: make(map[string]*channel.Channel)}
+	gredis := &Gredis{clients: make(map[int]*client.Client), port: port, db: db.NewGredisDb(), channels: make(map[string]*channel.Channel)}
+
+	//print ascii for server
+	gredis.printASCII()
+
+	//restore db data if available
+	gredis.restore()
+
+	return gredis
 }
 
 // start Gredis server
@@ -36,12 +44,6 @@ func (s *Gredis) Serve() {
 		fmt.Printf("listner not set due to error: %v.\nPress ctr + c to exit\n", err)
 		return
 	}
-
-	//restore db data if available
-	s.restore()
-
-	//print ascii for server
-	s.printASCII()
 
 	//start aof worker, tracking of commands
 	go s.db.StartAofWorker()
@@ -74,8 +76,6 @@ func (s *Gredis) handleConnection(c net.Conn) {
 
 	read := bufio.NewReader(client.Connection)
 
-	client.Connection.Write([]byte(fmt.Sprintf("user %d: connected\n", client.Id)))
-
 	for {
 		cmd, err := read.ReadBytes('\n')
 		if err != nil {
@@ -87,10 +87,10 @@ func (s *Gredis) handleConnection(c net.Conn) {
 		protocol, err := s.parseCommand(cmd, client.Id)
 
 		if err != nil {
-			c.Write([]byte(err.Error()))
+			client.Mess <- err.Error()
 		}
 
-		c.Write([]byte(protocol + "\n"))
+		client.Mess <- protocol
 	}
 
 }
@@ -229,12 +229,10 @@ func (s *Gredis) handleBroadcast(channelName string, value string) (bool, error)
 
 // read from aof file to restore data after crash or restart
 func (s *Gredis) restore() {
-
-	fmt.Println("function works")
 	f, err := os.Open("aof.txt")
 
 	if err != nil {
-		fmt.Println("reading file backup failed went wrong")
+		fmt.Println("\nreading file backup failed went wrong")
 		return
 	}
 
@@ -261,6 +259,8 @@ func (s *Gredis) restore() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatal("error reading from backup file")
+		log.Fatal("\nerror reading from backup file")
 	}
+
+	fmt.Println("\nBackup from aof file succesful")
 }

@@ -24,6 +24,8 @@ func NewChannel(name string) *Channel {
 	go func() {
 		for resp := range respCh {
 			if resp.Err != nil {
+				//remove client from subscribed map
+				channel.removeSubscribed(resp.Client)
 				//timeout connection
 				resp.Client.Connection.Close()
 			}
