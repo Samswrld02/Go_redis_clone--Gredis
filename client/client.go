@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bufio"
 	"net"
 	"sync"
 )
@@ -35,11 +34,18 @@ type Client struct {
 }
 
 func NewClient(c net.Conn) *Client {
-	return &Client{Id: ai.ID(), Connection: c, Mess: make(chan string, 1000)}
+	client := &Client{Id: ai.ID(), Connection: c, Mess: make(chan string, 1000)}
+
+	//start writer/broadcaster, indefinetly
+	go client.writerWorker()
+
+	return client
 }
 
-func (c *Client) SendMessage() {
-	for mess := range c.Mess {
-		bufio.NewWriter(c.Connection).Write([]byte(mess))
+// infinitely listen to messages channel and broadcast
+func (c *Client) writerWorker() {
+
+	for value := range c.Mess {
+		c.Connection.Write([]byte(value))
 	}
 }

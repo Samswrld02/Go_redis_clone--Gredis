@@ -1,8 +1,8 @@
 package server
 
 import (
-	client "Gredis/Client"
 	"Gredis/channel"
+	client "Gredis/client"
 	"Gredis/server/db"
 	"bufio"
 	"errors"
@@ -69,7 +69,8 @@ func (s *Gredis) handleConnection(c net.Conn) {
 	//register client
 	client := s.registerClient(c)
 
-	go client.SendMessage()
+	//send message to user channel
+	client.Mess <- "user connected"
 
 	read := bufio.NewReader(client.Connection)
 
@@ -165,8 +166,6 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 			return "", fmt.Errorf("failed, %v", err)
 		}
 
-		// fmt.Println(<-s.clients[clientId].Mess)
-
 		return "broadcast succesful", nil
 
 	default:
@@ -203,12 +202,15 @@ func (s *Gredis) CreateChannel(channelName string) {
 // handle subscription to channel
 func (s *Gredis) handleSubscription(channel string, client *client.Client) (bool, error) {
 	//check if channel exists
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if _, exists := s.channels[channel]; !exists {
 		return false, errors.New("channel doesn't exist")
 	}
 
 	//register client to channel
-	s.channels[channel].Subscribed = append(s.channels[channel].Subscribed, client)
+	s.channels[channel].Subscribe(client)
 
 	return true, nil
 }
@@ -222,7 +224,6 @@ func (s *Gredis) handleBroadcast(channelName string, value string) (bool, error)
 	//push message into channels channel
 	s.channels[channelName].Ch <- value
 
-	s.channels[channelName].BroadcastWorker()
 	return true, nil
 }
 
