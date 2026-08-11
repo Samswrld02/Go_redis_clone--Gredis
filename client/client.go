@@ -7,7 +7,7 @@ import (
 )
 
 // intialise global struct for autoincrementing
-var ai autoID
+var id autoID
 
 type autoID struct {
 	mu sync.Mutex
@@ -35,7 +35,7 @@ type Client struct {
 }
 
 func NewClient(c net.Conn) *Client {
-	client := &Client{Id: ai.ID(), Connection: c, Mess: make(chan string, 1000)}
+	client := &Client{Id: id.ID(), Connection: c, Mess: make(chan string, 1000)}
 
 	//start writer/broadcaster, indefinetly
 	go client.writerWorker()
