@@ -12,7 +12,7 @@ func TestConcurrency(t *testing.T) {
 	fmt.Println("Concurrency test busy..")
 
 	//make channel
-	request := 1
+	request := 15000
 	errChan := make(chan error, request)
 
 	port := ":6379"
