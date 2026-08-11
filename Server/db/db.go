@@ -27,8 +27,25 @@ func (db *Db) Set(key string, value string) (bool, error) {
 	return true, nil
 }
 
+func (db *Db) Delete(key string) (bool, error) {
+
+	//check if key exists
+	if _, err := db.Get(key); err != nil {
+		return false, fmt.Errorf("error: key does not exists, can't delete")
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	delete(db.data, key)
+
+	return true, nil
+}
+
 // Get cached db data
 func (db *Db) Get(key string) (string, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 
 	if value, exists := db.data[key]; exists {
 		return value, nil

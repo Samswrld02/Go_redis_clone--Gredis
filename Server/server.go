@@ -72,8 +72,9 @@ func (s *Gredis) handleConnection(c net.Conn) {
 	client := s.registerClient(c)
 
 	//send message to user channel
-	client.Mess <- "user connected"
+	s.respond("Connected to server", nil, client)
 
+	//create reader from the clients connection
 	read := bufio.NewReader(client.Connection)
 
 	for {
@@ -84,15 +85,21 @@ func (s *Gredis) handleConnection(c net.Conn) {
 			return
 		}
 
-		protocol, err := s.parseCommand(cmd, client.Id)
+		response, err := s.parseCommand(cmd, client.Id)
 
-		if err != nil {
-			client.Mess <- err.Error()
-		}
-
-		client.Mess <- protocol
+		//server response
+		s.respond(response, err, client)
 	}
 
+}
+
+// response handler for the server
+func (s *Gredis) respond(response string, err error, client *client.Client) {
+	if err != nil {
+		client.Mess <- err.Error()
+	}
+
+	client.Mess <- response
 }
 
 func (s *Gredis) removeClient(clientId int) {
@@ -113,10 +120,6 @@ func (s *Gredis) registerClient(c net.Conn) *client.Client {
 	return s.clients[client.Id]
 }
 
-func (s *Gredis) respond() {
-
-}
-
 // server parser for incomming commands via tcp socket
 func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 	protocol := string(b)
@@ -124,7 +127,7 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 	parts := strings.SplitN(protocol, " ", 3)
 
 	if len(parts) < 2 {
-		return "", errors.New("Invalid command try [GET KEY | SET KEY VALUE]")
+		return "", errors.New("Invalid Command. Choose command [SET | GET | DELETE | SUBSCRIBE | PUBLISH]")
 	}
 
 	//make command uppercase
@@ -144,6 +147,11 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 	case "SET":
 		//write command to worker for backup
 		s.db.CmdCh <- protocol
+
+		if len(parts) < 3 {
+			return "", fmt.Errorf("Error: Give a value to set")
+		}
+
 		value := strings.TrimSuffix(parts[2], "\n")
 		//SET KEY
 		s.db.Set(key, value)
@@ -157,6 +165,14 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 		}
 
 		return "Connected to channel", nil
+	case "DELETE":
+		s.db.CmdCh <- protocol
+		if _, err := s.db.Delete(key); err != nil {
+			return "", err
+		}
+
+		return "Success item deleted", nil
+
 	case "PUBLISH":
 		value := strings.TrimSuffix(parts[2], "\n")
 		//broadcast everything send to the channel's channel
@@ -169,7 +185,7 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 		return "broadcast succesful", nil
 
 	default:
-		return "Choose command SET OR GET", nil
+		return "Choose command [SET | GET | DELETE | SUBSCRIBE | PUBLISH]", nil
 	}
 }
 
@@ -250,11 +266,12 @@ func (s *Gredis) restore() {
 				continue
 			}
 			s.db.Set(line[1], line[2])
-		case "DEL":
+		case "DELETE":
 			if len(line) < 2 {
 				continue
 			}
 			//delete logic
+			s.db.Delete(line[1])
 		}
 	}
 
