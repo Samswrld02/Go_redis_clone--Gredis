@@ -145,12 +145,12 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 		}
 		return value, nil
 	case "SET":
-		//write command to worker for backup
-		s.db.CmdCh <- protocol
-
 		if len(parts) < 3 {
 			return "", fmt.Errorf("Error: Give a value to set")
 		}
+
+		//write command to worker for backup
+		s.db.CmdCh <- protocol
 
 		value := strings.TrimSuffix(parts[2], "\n")
 		//SET KEY
@@ -158,7 +158,11 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 		return "SET command works hi form gredis", nil
 	case "SUBSCRIBE":
 		//pass in channel name and client pointer
-		_, err := s.handleSubscription(key, s.clients[clientId])
+		s.mu.Lock()
+		client := s.clients[clientId]
+		s.mu.Unlock()
+
+		_, err := s.handleSubscription(key, client)
 
 		if err != nil {
 			return "Couldn't connect to channel ", err
@@ -174,6 +178,10 @@ func (s *Gredis) parseCommand(b []byte, clientId int) (string, error) {
 		return "Success item deleted", nil
 
 	case "PUBLISH":
+
+		if len(parts) < 3 {
+			return "", fmt.Errorf("error: Give a message to publish")
+		}
 		value := strings.TrimSuffix(parts[2], "\n")
 		//broadcast everything send to the channel's channel
 		_, err := s.handleBroadcast(key, value)
@@ -232,6 +240,9 @@ func (s *Gredis) handleSubscription(channel string, client *client.Client) (bool
 }
 
 func (s *Gredis) handleBroadcast(channelName string, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	//check if channel exists
 	if _, exists := s.channels[channelName]; !exists {
 		return false, errors.New("channel doesn't exist")
